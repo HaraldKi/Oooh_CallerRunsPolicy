@@ -22,9 +22,10 @@ public class ThreadPoolTest {
   private static final int NTHREADS = 4;
   private static final int QUICKTASK_MAX_MILLIS = 20;
   private static final int SLOW_TASK_MAX_MILLIS = 500;
-  private static final int SLOW_TASK_PERCENT = 10;
+  private static final int SLOW_TASK_PERCENT = 30;
   private static final int NTASKS = 2000;
   private static final int QSIZE = 4;
+  private static final boolean IDLEWAIT = true; // don't just thread sleep
   
   @Test
   public void callerRunsTest() throws Exception {
@@ -46,7 +47,7 @@ public class ThreadPoolTest {
   private void runTasks(Executor tpe) throws Exception {
     AtomicLong delayTotal = new AtomicLong();
     Semaphore sem = new Semaphore(0);
-    Producer producer = new Producer(tpe, NTASKS, sem, delayTotal);
+    Producer producer = new Producer(tpe, NTASKS, sem, delayTotal, IDLEWAIT);
     Thread producerThread = new Thread(producer);
     long start = System.currentTimeMillis();
     producerThread.start();
@@ -78,13 +79,14 @@ public class ThreadPoolTest {
      * executor when run() is called.
      */
     public Producer(Executor tpe, int toGenerate,
-                    Semaphore sem, AtomicLong delayTotal) {
+                    Semaphore sem, AtomicLong delayTotal,
+                    boolean idleWait) {
       this.tpe = tpe;
       this.tasks = new Task[toGenerate];
       for (int i=0; i<tasks.length; i++) {
         int delay = randomDelay();
         delayTotal.addAndGet(delay);
-        tasks[i] = new Task(sem, delay);
+        tasks[i] = new Task(sem, delay, idleWait);
       }
     }
     
@@ -107,20 +109,26 @@ public class ThreadPoolTest {
   private static class Task implements Runnable {
     private final long delay;
     private final Semaphore sem;
+    private final boolean idleWait;
 
     /**
      * create task to take at least the given delay milliseconds and report
      * success to the given Semaphore.
      */
-    public Task(Semaphore sem, long delay) {
+    public Task(Semaphore sem, long delay, boolean idleWait) {
       this.sem = sem;
       this.delay = delay;
+      this.idleWait = idleWait;
     }
 
     @Override
     public void run() {
       try {
-        Thread.sleep(delay);
+        if (idleWait) {
+          hotdelay();
+        } else {
+          Thread.sleep(delay);
+        }
         //System.out.println(Thread.currentThread()+" slept "+delay);
       } catch (InterruptedException e) {
         Thread.currentThread().interrupt();
@@ -129,6 +137,17 @@ public class ThreadPoolTest {
         sem.release();
       }
     }
+    
+    private void hotdelay() throws InterruptedException {
+      long finishAt = System.nanoTime()+1_000_000*delay;
+      while (System.nanoTime()<finishAt) {
+        // let the CPU get hot
+        if (Thread.currentThread().isInterrupted()) {
+          throw new InterruptedException("while running hot delay");
+        }
+      }
+    }
+   
 
   }
 }
