@@ -5,7 +5,7 @@ Small demonstration code to show that Java's ThreadPoolExecutor CallerRunsPolicy
 
 When tasks are submitted to a [ThreadPoolExecutor](https://docs.oracle.com/javase/9/docs/api/java/util/concurrent/ThreadPoolExecutor.html) that cannot currently handle more tasks, a [RejectionPolicy](https://docs.oracle.com/javase/9/docs/api/java/util/concurrent/RejectedExecutionHandler.html) is invoked to decide what to do. Only one of them, the [CallerRunsPolicy](https://docs.oracle.com/javase/9/docs/api/java/util/concurrent/ThreadPoolExecutor.CallerRunsPolicy.html) does not throw away or abort a task. The CallerRunsPolicy lets the calling thread (the publisher) run the task to be submitted itself instead of really adding it to the task queue.
 
-If all tasks take roughly the same amount of time to finish, this is a good strategy to (a) throttle the frequency of incoming tasks without dropping tasks and (b) not let the producer thread idle.
+If all tasks take roughly the same amount of time to finish, this is a good strategy to (a) throttle the frequency of incoming tasks without dropping tasks (bakc-pressure) and (b) not let the producer thread idle.
 
 But lets look at a well tuned system, finishing as many tasks as possible per time. It has the following characteristics:
 
@@ -13,7 +13,7 @@ But lets look at a well tuned system, finishing as many tasks as possible per ti
 
 2. There should always be slight pressure on the thread pool, meaning whenever a task is finished, at least one more should be ready for processing.
 
-This, however, means that the producer, on the average, should be faster than all consumers combined. As a result, the producer will eventually fill the queue, independent on how long it is. Long queues just take longer to fill up, but under the assumption of an infinite stream of tasks produced, it definitely will fill up. Consequently there is no point in having a long queue. In fact a queue length equal to the number of tasks should suffice, because if it is kept filled by the producer, there is always one task ready for each thread.
+This, however, means that the producer, on the average, should be faster than all consumers combined. As a result, the producer will eventually fill the queue, independent on how long it is. Long queues just take longer to fill up, but under the assumption of an infinite stream of tasks produced, it definitely will fill up. Consequently there is no point in having a long queue in the first place. In fact a queue length equal to the number of tasks should suffice, because if it is kept filled by the producer, there is always one task ready for each thread.
 
 Now consider a small number of long running tasks randomly spread between the short running tasks. According to the above reasoning, the producer will always hit a full queue. But instead of just waiting for the next slot to become free, CallerRunsPolicy uses the producer thread to run the long running task. The short queue will meanwhile drain and the consumer threads start idling.
 
